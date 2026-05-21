@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analyse nutritionnelle - Table Ciqual 2020</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .search-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .filter-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        select {
+            padding: 10px;
+            margin-right: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        #food-result {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        #list-result {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .value {
+            text-align: right;
+        }
+        .unit {
+            color: #666;
+            font-size: 0.9em;
+        }
+        .no-data {
+            color: #999;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <h1>Analyse nutritionnelle - Table Ciqual 2020</h1>
+    
+    <div class="search-container">
+        <h2>Rechercher un aliment</h2>
+        <input type="text" id="food-search" placeholder="Rechercher un aliment (nom français ou anglais)...">
+        <button onclick="searchFood()">Rechercher</button>
+    </div>
+
+    <div class="filter-container">
+        <h2>Extraction par prépondérance ou carence</h2>
+        <label for="nutrient-select">Nutriment :</label>
+        <select id="nutrient-select"></select>
+        <button onclick="searchTopNutrient()">Top 20 (prépondérance)</button>
+        <button onclick="searchBottomNutrient()">Bottom 20 (carence)</button>
+    </div>
+
+    <div id="food-result"></div>
+    <div id="list-result"></div>
+
+    <script>
+        let foodsData = [];
+        let nutrientsList = [];
+
+        // Charger les données
+        async function fetchData() {
+            try {
+                const response = await fetch('ciqual_data.json');
+                if (!response.ok) {
+                    throw new Error('Erreur lors du chargement des données');
+                }
+                foodsData = await response.json();
+                nutrientsList = getAllNutrients();
+                populateNutrientSelect();
+            } catch (error) {
+                console.error('Erreur:', error);
+                document.getElementById('food-result').innerHTML = '<p style="color: red;">Erreur lors du chargement des données. Assurez-vous que le fichier ciqual_data.json est présent et correct.</p>';
+            }
+        }
+
+        // Obtenir la liste de tous les nutriments (colonnes numériques)
+        function getAllNutrients() {
+            if (foodsData.length === 0) return [];
+            const sample = foodsData[0];
+            const nutrients = [];
+            for (const key in sample) {
+                if (key !== 'alim_code' && key !== 'alim_nom_fr' && key !== 'alim_nom_eng' && typeof sample[key] === 'number') {
+                    nutrients.push(key);
+                }
+            }
+            return nutrients.sort();
+        }
+
+        // Remplir la liste déroulante des nutriments
+        function populateNutrientSelect() {
+            const select = document.getElementById('nutrient-select');
+            select.innerHTML = '';
+            nutrientsList.forEach(nutrient => {
+                const option = document.createElement('option');
+                option.value = nutrient;
+                option.textContent = nutrient;
+                select.appendChild(option);
+            });
+        }
+
+        // Rechercher un aliment par son nom
+        function searchFood() {
+            const searchTerm = document.getElementById('food-search').value.trim().toLowerCase();
+            if (!searchTerm) {
+                alert('Veuillez entrer un terme de recherche');
+                return;
+            }
+
+            const results = foodsData.filter(food => {
+                const nameFr = (food.alim_nom_fr || '').toLowerCase();
+                const nameEng = (food.alim_nom_eng || '').toLowerCase();
+                return nameFr.includes(searchTerm) || nameEng.includes(searchTerm);
+            });
+
+            if (results.length === 0) {
+                document.getElementById('food-result').innerHTML = '<p>Aucun aliment trouvé pour "' + searchTerm + '"</p>';
+                return;
+            }
+
+            displayFoodItem(results[0]); // Afficher le premier résultat
+        }
+
+        // Afficher les détails d'un aliment
+        function displayFoodItem(food) {
+            let html = '<h2>' + food.alim_nom_fr + ' (English: ' + (food.alim_nom_eng || 'N/A') + ')</h2>';
+            html += '<table><tr><th>Nutriment</th><th>Valeur</th><th>Unité</th></tr>';
+            
+            for (const key in food) {
+                if (key !== 'alim_code' && key !== 'alim_nom_fr' && key !== 'alim_nom_eng' && typeof food[key] === 'number') {
+                    const value = food[key];
+                    const unit = extractUnit(key);
+                    html += '<tr><td>' + key + '</td><td class="value">' + (value !== null && value !== undefined ? value.toFixed(2) : '-') + '</td><td class="unit">' + unit + '</td></tr>';
+                }
+            }
+            
+            html += '</table>';
+            document.getElementById('food-result').innerHTML = html;
+        }
+
+        // Extraire l'unité d'un nom de nutriment
+        function extractUnit(nutrientName) {
+            const match = nutrientName.match(/\(([^)]+)\)/);
+            return match ? match[1] : '';
+        }
+
+        // Rechercher le top 20 pour un nutriment donné
+        function searchTopNutrient() {
+            const nutrient = document.getElementById('nutrient-select').value;
+            if (!nutrient) {
+                alert('Veuillez sélectionner un nutriment');
+                return;
+            }
+
+            const sorted = foodsData
+                .filter(food => food[nutrient] !== null && food[nutrient] !== undefined && !isNaN(food[nutrient]))
+                .sort((a, b) => b[nutrient] - a[nutrient])
+                .slice(0, 20);
+
+            displayList(sorted, nutrient, 'Top 20 des aliments les plus riches en ' + nutrient);
+        }
+
+        // Rechercher le bottom 20 pour un nutriment donné
+        function searchBottomNutrient() {
+            const nutrient = document.getElementById('nutrient-select').value;
+            if (!nutrient) {
+                alert('Veuillez sélectionner un nutriment');
+                return;
+            }
+
+            const sorted = foodsData
+                .filter(food => food[nutrient] !== null && food[nutrient] !== undefined && !isNaN(food[nutrient]) && food[nutrient] > 0)
+                .sort((a, b) => a[nutrient] - b[nutrient])
+                .slice(0, 20);
+
+            displayList(sorted, nutrient, 'Top 20 des aliments les plus pauvres en ' + nutrient);
+        }
+
+        // Afficher une liste d'aliments
+        function displayList(foods, nutrient, title) {
+            let html = '<h2>' + title + '</h2>';
+            if (foods.length === 0) {
+                html += '<p>Aucun résultat trouvé</p>';
+            } else {
+                html += '<table><tr><th>Rang</th><th>Aliment</th><th>Valeur</th><th>Unité</th></tr>';
+                const unit = extractUnit(nutrient);
+                foods.forEach((food, index) => {
+                    html += '<tr><td>' + (index + 1) + '</td><td>' + food.alim_nom_fr + ' (' + (food.alim_nom_eng || 'N/A') + ')</td><td class="value">' + (food[nutrient] !== null && food[nutrient] !== undefined ? food[nutrient].toFixed(2) : '-') + '</td><td class="unit">' + unit + '</td></tr>';
+                });
+                html += '</table>';
+            }
+            document.getElementById('list-result').innerHTML = html;
+        }
+
+        // Effacer les résultats
+        function clearResults() {
+            document.getElementById('food-result').innerHTML = '';
+            document.getElementById('list-result').innerHTML = '';
+        }
+
+        // Initialiser la page
+        fetchData();
+    </script>
+</body>
+</html>
