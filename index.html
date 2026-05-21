@@ -23,14 +23,7 @@
             border-bottom: 2px solid #3498db;
             padding-bottom: 10px;
         }
-        .search-container {
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        .filter-container {
+        .search-container, .filter-container {
             background-color: white;
             padding: 20px;
             border-radius: 8px;
@@ -45,7 +38,7 @@
             border-radius: 4px;
             font-size: 16px;
         }
-        select {
+        select, button {
             padding: 10px;
             margin-right: 10px;
             border: 1px solid #ddd;
@@ -53,26 +46,15 @@
             font-size: 16px;
         }
         button {
-            padding: 10px 20px;
             background-color: #3498db;
             color: white;
             border: none;
-            border-radius: 4px;
             cursor: pointer;
-            font-size: 16px;
-            margin-right: 10px;
         }
         button:hover {
             background-color: #2980b9;
         }
-        #food-result {
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        #list-result {
+        #food-result, #list-result {
             background-color: white;
             padding: 20px;
             border-radius: 8px;
@@ -99,27 +81,43 @@
             color: #666;
             font-size: 0.9em;
         }
-        .no-data {
-            color: #999;
+        #status-message {
+            padding: 10px;
+            background: #eaf2f8;
+            border-radius: 4px;
+            margin-bottom: 15px;
             font-style: italic;
+        }
+        .manual-load {
+            display: none;
+            margin-top: 10px;
         }
     </style>
 </head>
 <body>
     <h1>Analyse nutritionnelle - Table Ciqual 2020</h1>
-    
+
+    <!-- Zone de statut pour le chargement -->
+    <div id="status-message">⏳ Chargement des données nutritionnelles...</div>
+    <div class="manual-load" id="manual-load-section">
+        <p style="color:#c0392b;">⚠️ Impossible de charger automatiquement les données.</p>
+        <p>Vous pouvez charger un fichier JSON manuellement (exporté depuis la table Ciqual) :</p>
+        <input type="file" id="manual-file" accept=".json">
+        <button onclick="document.getElementById('manual-file').click()">📁 Sélectionner un fichier</button>
+    </div>
+
     <div class="search-container">
         <h2>Rechercher un aliment</h2>
         <input type="text" id="food-search" placeholder="Rechercher un aliment (nom français ou anglais)...">
-        <button onclick="searchFood()">Rechercher</button>
+        <button onclick="searchFood()">🔍 Rechercher</button>
     </div>
 
     <div class="filter-container">
         <h2>Extraction par prépondérance ou carence</h2>
         <label for="nutrient-select">Nutriment :</label>
         <select id="nutrient-select"></select>
-        <button onclick="searchTopNutrient()">Top 20 (prépondérance)</button>
-        <button onclick="searchBottomNutrient()">Bottom 20 (carence)</button>
+        <button onclick="searchTopNutrient()">⬆️ Top 20 (prépondérance)</button>
+        <button onclick="searchBottomNutrient()">⬇️ Bottom 20 (carence)</button>
     </div>
 
     <div id="food-result"></div>
@@ -129,36 +127,82 @@
         let foodsData = [];
         let nutrientsList = [];
 
-        // Charger les données
+        // ---- Chargement des données ----
+        async function loadData(url) {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.json();
+        }
+
+        async function tryAutoLoad() {
+            const sources = [
+                'ciqual_data.json',  // local (développement)
+                'https://raw.githubusercontent.com/khairdidact/composition-nutritionnelle-des-aliments/main/ciqual_data.json' // URL brute GitHub (adaptez avec votre dépôt)
+            ];
+
+            for (const url of sources) {
+                try {
+                    const data = await loadData(url);
+                    document.getElementById('status-message').innerHTML = '✅ Données chargées avec succès depuis ' + url;
+                    return data;
+                } catch (e) {
+                    console.warn('Échec de chargement depuis', url, e);
+                }
+            }
+            return null;
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    foodsData = JSON.parse(e.target.result);
+                    document.getElementById('status-message').innerHTML = '✅ Données chargées manuellement.';
+                    document.getElementById('manual-load-section').style.display = 'none';
+                    onDataReady();
+                } catch (err) {
+                    document.getElementById('status-message').innerHTML = '❌ Le fichier sélectionné n\'est pas un JSON valide.';
+                }
+            };
+            reader.readAsText(file);
+        }
+
         async function fetchData() {
-            try {
-                const response = await fetch('ciqual_data.json');
-                if (!response.ok) {
-                    throw new Error('Erreur lors du chargement des données');
-                }
-                foodsData = await response.json();
-                nutrientsList = getAllNutrients();
-                populateNutrientSelect();
-            } catch (error) {
-                console.error('Erreur:', error);
-                document.getElementById('food-result').innerHTML = '<p style="color: red;">Erreur lors du chargement des données. Assurez-vous que le fichier ciqual_data.json est présent et correct.</p>';
+            foodsData = await tryAutoLoad();
+            if (!foodsData) {
+                document.getElementById('status-message').innerHTML = '❌ Échec du chargement automatique. Utilisez le chargement manuel ci-dessous.';
+                document.getElementById('manual-load-section').style.display = 'block';
+                document.getElementById('manual-file').addEventListener('change', handleFileSelect);
+                return;
             }
+            onDataReady();
         }
 
-        // Obtenir la liste de tous les nutriments (colonnes numériques)
+        function onDataReady() {
+            nutrientsList = getAllNutrients();
+            populateNutrientSelect();
+            document.getElementById('food-result').innerHTML = '';
+            document.getElementById('list-result').innerHTML = '';
+        }
+
+        // ---- Extraction de la liste complète des nutriments ----
         function getAllNutrients() {
-            if (foodsData.length === 0) return [];
-            const sample = foodsData[0];
-            const nutrients = [];
-            for (const key in sample) {
-                if (key !== 'alim_code' && key !== 'alim_nom_fr' && key !== 'alim_nom_eng' && typeof sample[key] === 'number') {
-                    nutrients.push(key);
+            const nutrientSet = new Set();
+            for (const food of foodsData) {
+                for (const key in food) {
+                    if (key === 'alim_code' || key === 'alim_nom_fr' || key === 'alim_nom_eng') continue;
+                    // On garde les clés qui ont une valeur numérique (y compris 0), mais pas null/undefined
+                    if (typeof food[key] === 'number') {
+                        nutrientSet.add(key);
+                    }
                 }
             }
-            return nutrients.sort();
+            return Array.from(nutrientSet).sort();
         }
 
-        // Remplir la liste déroulante des nutriments
+        // ---- Interface utilisateur ----
         function populateNutrientSelect() {
             const select = document.getElementById('nutrient-select');
             select.innerHTML = '';
@@ -170,8 +214,11 @@
             });
         }
 
-        // Rechercher un aliment par son nom
         function searchFood() {
+            if (foodsData.length === 0) {
+                alert('Données non chargées.');
+                return;
+            }
             const searchTerm = document.getElementById('food-search').value.trim().toLowerCase();
             if (!searchTerm) {
                 alert('Veuillez entrer un terme de recherche');
@@ -188,66 +235,53 @@
                 document.getElementById('food-result').innerHTML = '<p>Aucun aliment trouvé pour "' + searchTerm + '"</p>';
                 return;
             }
-
-            displayFoodItem(results[0]); // Afficher le premier résultat
+            displayFoodItem(results[0]);
         }
 
-        // Afficher les détails d'un aliment
         function displayFoodItem(food) {
             let html = '<h2>' + food.alim_nom_fr + ' (English: ' + (food.alim_nom_eng || 'N/A') + ')</h2>';
             html += '<table><tr><th>Nutriment</th><th>Valeur</th><th>Unité</th></tr>';
-            
             for (const key in food) {
-                if (key !== 'alim_code' && key !== 'alim_nom_fr' && key !== 'alim_nom_eng' && typeof food[key] === 'number') {
-                    const value = food[key];
+                if (key === 'alim_code' || key === 'alim_nom_fr' || key === 'alim_nom_eng') continue;
+                const value = food[key];
+                if (typeof value === 'number') {
                     const unit = extractUnit(key);
-                    html += '<tr><td>' + key + '</td><td class="value">' + (value !== null && value !== undefined ? value.toFixed(2) : '-') + '</td><td class="unit">' + unit + '</td></tr>';
+                    html += '<tr><td>' + key + '</td><td class="value">' + value.toFixed(2) + '</td><td class="unit">' + unit + '</td></tr>';
                 }
             }
-            
             html += '</table>';
             document.getElementById('food-result').innerHTML = html;
         }
 
-        // Extraire l'unité d'un nom de nutriment
         function extractUnit(nutrientName) {
             const match = nutrientName.match(/\(([^)]+)\)/);
             return match ? match[1] : '';
         }
 
-        // Rechercher le top 20 pour un nutriment donné
         function searchTopNutrient() {
+            if (foodsData.length === 0) return;
             const nutrient = document.getElementById('nutrient-select').value;
-            if (!nutrient) {
-                alert('Veuillez sélectionner un nutriment');
-                return;
-            }
+            if (!nutrient) return alert('Sélectionnez un nutriment');
 
             const sorted = foodsData
-                .filter(food => food[nutrient] !== null && food[nutrient] !== undefined && !isNaN(food[nutrient]))
+                .filter(f => typeof f[nutrient] === 'number')
                 .sort((a, b) => b[nutrient] - a[nutrient])
                 .slice(0, 20);
-
-            displayList(sorted, nutrient, 'Top 20 des aliments les plus riches en ' + nutrient);
+            displayList(sorted, nutrient, '🔺 Top 20 des aliments les plus riches en ' + nutrient);
         }
 
-        // Rechercher le bottom 20 pour un nutriment donné
         function searchBottomNutrient() {
+            if (foodsData.length === 0) return;
             const nutrient = document.getElementById('nutrient-select').value;
-            if (!nutrient) {
-                alert('Veuillez sélectionner un nutriment');
-                return;
-            }
+            if (!nutrient) return alert('Sélectionnez un nutriment');
 
             const sorted = foodsData
-                .filter(food => food[nutrient] !== null && food[nutrient] !== undefined && !isNaN(food[nutrient]) && food[nutrient] > 0)
+                .filter(f => typeof f[nutrient] === 'number' && f[nutrient] > 0)
                 .sort((a, b) => a[nutrient] - b[nutrient])
                 .slice(0, 20);
-
-            displayList(sorted, nutrient, 'Top 20 des aliments les plus pauvres en ' + nutrient);
+            displayList(sorted, nutrient, '🔻 Top 20 des aliments les plus pauvres en ' + nutrient);
         }
 
-        // Afficher une liste d'aliments
         function displayList(foods, nutrient, title) {
             let html = '<h2>' + title + '</h2>';
             if (foods.length === 0) {
@@ -256,20 +290,19 @@
                 html += '<table><tr><th>Rang</th><th>Aliment</th><th>Valeur</th><th>Unité</th></tr>';
                 const unit = extractUnit(nutrient);
                 foods.forEach((food, index) => {
-                    html += '<tr><td>' + (index + 1) + '</td><td>' + food.alim_nom_fr + ' (' + (food.alim_nom_eng || 'N/A') + ')</td><td class="value">' + (food[nutrient] !== null && food[nutrient] !== undefined ? food[nutrient].toFixed(2) : '-') + '</td><td class="unit">' + unit + '</td></tr>';
+                    html += `<tr>
+                        <td>${index + 1}</td>
+                        <td>${food.alim_nom_fr} (${food.alim_nom_eng || 'N/A'})</td>
+                        <td class="value">${food[nutrient].toFixed(2)}</td>
+                        <td class="unit">${unit}</td>
+                    </tr>`;
                 });
                 html += '</table>';
             }
             document.getElementById('list-result').innerHTML = html;
         }
 
-        // Effacer les résultats
-        function clearResults() {
-            document.getElementById('food-result').innerHTML = '';
-            document.getElementById('list-result').innerHTML = '';
-        }
-
-        // Initialiser la page
+        // Démarrage
         fetchData();
     </script>
 </body>
